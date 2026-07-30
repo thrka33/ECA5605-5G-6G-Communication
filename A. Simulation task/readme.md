@@ -18,12 +18,13 @@ To analyze packet loss and evaluate communication reliability.
 Simulation Parameters
 
 Parameter	Value
-Communication Distance	0.5–10 km
-Number of Devices	100
-Coverage Range	60–100 %
+
+Communication Distance	-0.5–10 km
+Number of Devices	-100
+Coverage Range	-60–100 %
 Delay	Distance-dependent
 Power Consumption	Distance-dependent
-Throughput	40–220 kbps
+Throughput	-40–220 kbps
 Packet Loss	Distance-dependent
 
 Performance Metrics
