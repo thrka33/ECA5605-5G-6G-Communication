@@ -1,0 +1,553 @@
+%% INDUSTRIAL 5G NETWORK DESIGN AND VALIDATION
+% Smart Factory Private 5G Performance Evaluation
+% Design A: Conventional 5G
+% Design B: Proposed Massive-MIMO + Beamforming 5G
+
+clear;
+clc;
+close all;
+
+%% ================================================================
+% 1. SYSTEM PARAMETERS
+% ================================================================
+
+fc = 3.5e9;                 % Carrier frequency (Hz)
+c = 3e8;                    % Speed of light (m/s)
+lambda = c/fc;
+
+bandwidth = 100e6;          % 100 MHz
+noiseFigure = 7;            % dB
+txPower_dBm = 30;           % 1 W transmit power
+thermalNoise_dBm = -174;    % dBm/Hz
+
+% Industrial factory dimensions
+factoryLength = 200;        % meters
+factoryWidth  = 100;        % meters
+
+% Distances for simulation
+distance = 10:10:200;
+
+% Device densities
+deviceCounts = [50 100 200 300 400 500];
+
+% Traffic load
+trafficLoad = [20 40 60 80 100];   % percentage
+
+%% ================================================================
+% 2. NOISE POWER
+% ================================================================
+
+noisePower_dBm = thermalNoise_dBm + ...
+                 10*log10(bandwidth) + noiseFigure;
+
+noisePower_W = 10.^((noisePower_dBm-30)/10);
+
+%% ================================================================
+% 3. DESIGN PARAMETERS
+% ================================================================
+
+% Design A - Conventional 5G
+Nt_A = 2;                   % Transmit antennas
+Nr_A = 2;                   % Receive antennas
+beamformingGain_A = 0;      % dB
+resourceEfficiency_A = 0.75;
+energyPerBit_A = 1.5e-8;    % J/bit
+
+% Design B - Proposed Industrial 5G
+Nt_B = 64;                  % Massive MIMO antennas
+Nr_B = 8;
+beamformingGain_B = 10*log10(Nt_B);
+resourceEfficiency_B = 0.92;
+energyPerBit_B = 8e-9;
+
+%% ================================================================
+% 4. PATH LOSS MODEL
+% ================================================================
+
+pathLoss = zeros(size(distance));
+
+for k = 1:length(distance)
+
+    d = distance(k);
+
+    % Free-space path loss
+    pathLoss(k) = 20*log10(4*pi*d/lambda);
+
+end
+
+%% ================================================================
+% 5. SINR CALCULATION
+% ================================================================
+
+SINR_A_dB = zeros(size(distance));
+SINR_B_dB = zeros(size(distance));
+
+for k = 1:length(distance)
+
+    receivedPower_A_dBm = ...
+        txPower_dBm - pathLoss(k) + beamformingGain_A;
+
+    receivedPower_B_dBm = ...
+        txPower_dBm - pathLoss(k) + beamformingGain_B;
+
+    interference_A_dB = 8;
+    interference_B_dB = 4;
+
+    SINR_A_dB(k) = receivedPower_A_dBm - ...
+        10*log10(10^(noisePower_dBm/10) + ...
+        10^(interference_A_dB/10));
+
+    SINR_B_dB(k) = receivedPower_B_dBm - ...
+        10*log10(10^(noisePower_dBm/10) + ...
+        10^(interference_B_dB/10));
+
+end
+
+%% ================================================================
+% 6. BER CALCULATION
+% ================================================================
+
+% Convert SINR to linear
+SINR_A = 10.^(SINR_A_dB/10);
+SINR_B = 10.^(SINR_B_dB/10);
+
+% BPSK theoretical BER approximation
+BER_A = 0.5 * erfc(sqrt(SINR_A));
+BER_B = 0.5 * erfc(sqrt(SINR_B));
+
+%% ================================================================
+% 7. SPECTRAL EFFICIENCY
+% ================================================================
+
+spectralEfficiency_A = log2(1 + SINR_A) * resourceEfficiency_A;
+spectralEfficiency_B = log2(1 + SINR_B) * resourceEfficiency_B;
+
+% Limit practical spectral efficiency
+spectralEfficiency_A = min(spectralEfficiency_A, 8);
+spectralEfficiency_B = min(spectralEfficiency_B, 12);
+
+%% ================================================================
+% 8. THROUGHPUT
+% ================================================================
+
+throughput_A = bandwidth .* spectralEfficiency_A / 1e6;
+throughput_B = bandwidth .* spectralEfficiency_B / 1e6;
+
+% Mbps
+
+%% ================================================================
+% 9. LATENCY MODEL
+% ================================================================
+
+processingLatency = 1;      % ms
+transmissionLatency = 1;    % ms
+queueLatency_A = 4;         % ms
+queueLatency_B = 2;         % ms
+
+latency_A = processingLatency + ...
+            transmissionLatency + queueLatency_A + ...
+            distance/(c/1000);
+
+latency_B = processingLatency + ...
+            transmissionLatency + queueLatency_B + ...
+            distance/(c/1000);
+
+%% ================================================================
+% 10. RELIABILITY
+% ================================================================
+
+reliability_A = 1 - BER_A;
+reliability_B = 1 - BER_B;
+
+reliability_A = min(reliability_A,0.999999);
+reliability_B = min(reliability_B,0.9999999);
+
+%% ================================================================
+% 11. ENERGY EFFICIENCY
+% ================================================================
+
+energyEfficiency_A = throughput_A*1e6 ./ energyPerBit_A;
+energyEfficiency_B = throughput_B*1e6 ./ energyPerBit_B;
+
+%% ================================================================
+% 12. COVERAGE ANALYSIS
+% ================================================================
+
+coverageThreshold = 5;      % minimum SINR in dB
+
+coverage_A = distance(SINR_A_dB >= coverageThreshold);
+coverage_B = distance(SINR_B_dB >= coverageThreshold);
+
+if isempty(coverage_A)
+    maxCoverage_A = 0;
+else
+    maxCoverage_A = max(coverage_A);
+end
+
+if isempty(coverage_B)
+    maxCoverage_B = 0;
+else
+    maxCoverage_B = max(coverage_B);
+end
+
+%% ================================================================
+% 13. DEVICE DENSITY ANALYSIS
+% ================================================================
+
+densityThroughput_A = zeros(size(deviceCounts));
+densityThroughput_B = zeros(size(deviceCounts));
+
+densityLatency_A = zeros(size(deviceCounts));
+densityLatency_B = zeros(size(deviceCounts));
+
+densityReliability_A = zeros(size(deviceCounts));
+densityReliability_B = zeros(size(deviceCounts));
+
+for k = 1:length(deviceCounts)
+
+    N = deviceCounts(k);
+
+    % Increased contention with device density
+    contention_A = 1 + 0.004*N;
+    contention_B = 1 + 0.0015*N;
+
+    densityThroughput_A(k) = ...
+        max(throughput_A(1)/contention_A,1);
+
+    densityThroughput_B(k) = ...
+        max(throughput_B(1)/contention_B,1);
+
+    densityLatency_A(k) = ...
+        5 + 0.02*N;
+
+    densityLatency_B(k) = ...
+        3 + 0.008*N;
+
+    densityReliability_A(k) = ...
+        exp(-0.002*N);
+
+    densityReliability_B(k) = ...
+        exp(-0.0008*N);
+
+end
+
+%% ================================================================
+% 14. TRAFFIC LOAD ANALYSIS
+% ================================================================
+
+trafficThroughput_A = zeros(size(trafficLoad));
+trafficThroughput_B = zeros(size(trafficLoad));
+
+trafficLatency_A = zeros(size(trafficLoad));
+trafficLatency_B = zeros(size(trafficLoad));
+
+for k = 1:length(trafficLoad)
+
+    load = trafficLoad(k);
+
+    trafficThroughput_A(k) = ...
+        throughput_A(1) * (load/100) * ...
+        (1 - 0.002*load);
+
+    trafficThroughput_B(k) = ...
+        throughput_B(1) * (load/100) * ...
+        (1 - 0.001*load);
+
+    trafficLatency_A(k) = ...
+        5 + 0.06*load;
+
+    trafficLatency_B(k) = ...
+        3 + 0.025*load;
+
+end
+
+%% ================================================================
+% 15. DISPLAY MAIN RESULTS
+% ================================================================
+
+fprintf('\n');
+fprintf('============================================================\n');
+fprintf('       INDUSTRIAL PRIVATE 5G SIMULATION RESULTS\n');
+fprintf('============================================================\n');
+
+fprintf('\nCarrier Frequency : %.2f GHz\n',fc/1e9);
+fprintf('Bandwidth         : %.0f MHz\n',bandwidth/1e6);
+fprintf('Noise Power       : %.2f dBm\n',noisePower_dBm);
+
+fprintf('\nMaximum Coverage:\n');
+fprintf('Design A          : %.0f m\n',maxCoverage_A);
+fprintf('Design B          : %.0f m\n',maxCoverage_B);
+
+fprintf('\nAverage SINR:\n');
+fprintf('Design A          : %.2f dB\n',mean(SINR_A_dB));
+fprintf('Design B          : %.2f dB\n',mean(SINR_B_dB));
+
+fprintf('\nAverage BER:\n');
+fprintf('Design A          : %.4e\n',mean(BER_A));
+fprintf('Design B          : %.4e\n',mean(BER_B));
+
+fprintf('\nAverage Throughput:\n');
+fprintf('Design A          : %.2f Mbps\n',mean(throughput_A));
+fprintf('Design B          : %.2f Mbps\n',mean(throughput_B));
+
+fprintf('\nAverage Spectral Efficiency:\n');
+fprintf('Design A          : %.2f bit/s/Hz\n',mean(spectralEfficiency_A));
+fprintf('Design B          : %.2f bit/s/Hz\n',mean(spectralEfficiency_B));
+
+fprintf('\nAverage Latency:\n');
+fprintf('Design A          : %.2f ms\n',mean(latency_A));
+fprintf('Design B          : %.2f ms\n',mean(latency_B));
+
+fprintf('\nAverage Reliability:\n');
+fprintf('Design A          : %.6f\n',mean(reliability_A));
+fprintf('Design B          : %.6f\n',mean(reliability_B));
+
+fprintf('\n');
+
+%% ================================================================
+% 16. GRAPH 1 - SINR VS DISTANCE
+% ================================================================
+
+figure;
+
+plot(distance,SINR_A_dB,'-o','LineWidth',2);
+hold on;
+
+plot(distance,SINR_B_dB,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Distance (m)');
+ylabel('SINR (dB)');
+title('SINR vs Distance');
+
+legend('Design A - Conventional 5G', ...
+       'Design B - Massive MIMO + Beamforming', ...
+       'Location','best');
+
+%% ================================================================
+% 17. GRAPH 2 - BER VS DISTANCE
+% ================================================================
+
+figure;
+
+semilogy(distance,BER_A,'-o','LineWidth',2);
+hold on;
+
+semilogy(distance,BER_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Distance (m)');
+ylabel('BER');
+title('BER vs Distance');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 18. GRAPH 3 - THROUGHPUT VS DISTANCE
+% ================================================================
+
+figure;
+
+plot(distance,throughput_A,'-o','LineWidth',2);
+hold on;
+
+plot(distance,throughput_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Distance (m)');
+ylabel('Throughput (Mbps)');
+title('Throughput vs Distance');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 19. GRAPH 4 - SPECTRAL EFFICIENCY
+% ================================================================
+
+figure;
+
+plot(distance,spectralEfficiency_A,'-o','LineWidth',2);
+hold on;
+
+plot(distance,spectralEfficiency_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Distance (m)');
+ylabel('Spectral Efficiency (bit/s/Hz)');
+title('Spectral Efficiency vs Distance');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 20. GRAPH 5 - LATENCY VS DISTANCE
+% ================================================================
+
+figure;
+
+plot(distance,latency_A,'-o','LineWidth',2);
+hold on;
+
+plot(distance,latency_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Distance (m)');
+ylabel('Latency (ms)');
+title('Latency vs Distance');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 21. GRAPH 6 - DEVICE DENSITY
+% ================================================================
+
+figure;
+
+plot(deviceCounts,densityThroughput_A,'-o','LineWidth',2);
+hold on;
+
+plot(deviceCounts,densityThroughput_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Number of Devices');
+ylabel('Throughput (Mbps)');
+title('Throughput vs Device Density');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 22. GRAPH 7 - LATENCY VS DEVICE DENSITY
+% ================================================================
+
+figure;
+
+plot(deviceCounts,densityLatency_A,'-o','LineWidth',2);
+hold on;
+
+plot(deviceCounts,densityLatency_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Number of Devices');
+ylabel('Latency (ms)');
+title('Latency vs Device Density');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 23. GRAPH 8 - RELIABILITY VS DEVICE DENSITY
+% ================================================================
+
+figure;
+
+plot(deviceCounts,densityReliability_A,'-o','LineWidth',2);
+hold on;
+
+plot(deviceCounts,densityReliability_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Number of Devices');
+ylabel('Reliability');
+title('Reliability vs Device Density');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 24. GRAPH 9 - TRAFFIC LOAD
+% ================================================================
+
+figure;
+
+plot(trafficLoad,trafficThroughput_A,'-o','LineWidth',2);
+hold on;
+
+plot(trafficLoad,trafficThroughput_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Traffic Load (%)');
+ylabel('Throughput (Mbps)');
+title('Throughput vs Traffic Load');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 25. GRAPH 10 - LATENCY VS TRAFFIC LOAD
+% ================================================================
+
+figure;
+
+plot(trafficLoad,trafficLatency_A,'-o','LineWidth',2);
+hold on;
+
+plot(trafficLoad,trafficLatency_B,'-s','LineWidth',2);
+
+grid on;
+
+xlabel('Traffic Load (%)');
+ylabel('Latency (ms)');
+title('Latency vs Traffic Load');
+
+legend('Design A','Design B','Location','best');
+
+%% ================================================================
+% 26. COMPARISON TABLE
+% ================================================================
+
+Design = {'Conventional 5G';'Proposed Industrial 5G'};
+
+AvgSINR = [mean(SINR_A_dB);mean(SINR_B_dB)];
+
+AvgBER = [mean(BER_A);mean(BER_B)];
+
+AvgThroughput = [mean(throughput_A);mean(throughput_B)];
+
+AvgSpectralEfficiency = ...
+    [mean(spectralEfficiency_A);
+     mean(spectralEfficiency_B)];
+
+AvgLatency = [mean(latency_A);mean(latency_B)];
+
+AvgReliability = ...
+    [mean(reliability_A);
+     mean(reliability_B)];
+
+MaxCoverage = [maxCoverage_A;maxCoverage_B];
+
+ResultsTable = table(Design,...
+                    AvgSINR,...
+                    AvgBER,...
+                    AvgThroughput,...
+                    AvgSpectralEfficiency,...
+                    AvgLatency,...
+                    AvgReliability,...
+                    MaxCoverage);
+
+disp(' ');
+disp('============================================================');
+disp('FINAL DESIGN COMPARISON');
+disp('============================================================');
+
+disp(ResultsTable);
+
+%% ================================================================
+% 27. SAVE RESULTS
+% ================================================================
+
+writetable(ResultsTable,'industrial_5G_results.csv');
+
+save('industrial_5G_results.mat');
+
+fprintf('\nResults saved successfully.\n');
+fprintf('industrial_5G_results.csv created.\n');
+fprintf('industrial_5G_results.mat created.\n');
+
+fprintf('\n============================================================\n');
+fprintf('                 SIMULATION COMPLETED\n');
+fprintf('============================================================\n');
